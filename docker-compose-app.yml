@@ -6,7 +6,7 @@ services:
     container_name: avr-app
     restart: always
     environment:
-      - PORT=3000
+      - PORT=${PORT:-3000}
       - ADMIN_EMAIL=${ADMIN_EMAIL}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - DATABASE_HOST=avr-app-db
@@ -24,7 +24,7 @@ services:
       - ./keys:/usr/src/app/keys
       - ./functions:/usr/src/app/functions
     ports:
-      - 3000:3000
+      - ${PORT:-3000}:${PORT:-3000}
     depends_on:
       avr-app-db:
         condition: service_healthy
@@ -93,4 +93,4 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.20.0.0/24
+        - subnet: 192.168.100.0/24
