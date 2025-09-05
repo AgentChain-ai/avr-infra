@@ -5,14 +5,14 @@ services:
     container_name: avr-core
     restart: always
     environment:
-      - PORT=5001 
-      - ASR_URL=http://avr-asr-deepgram:6010/speech-to-text-stream
-      - LLM_URL=http://avr-llm-openai:6002/prompt-stream
-      - TTS_URL=http://avr-tts-deepgram:6011/text-to-speech-stream
+      - PORT=${CORE_PORT_START:-5001}
+      - ASR_URL=http://avr-asr-deepgram:${ASR_PORT_START:-6010}/speech-to-text-stream
+      - LLM_URL=http://avr-llm-openai:${LLM_PORT_START:-6002}/prompt-stream
+      - TTS_URL=http://avr-tts-deepgram:${TTS_PORT_START:-6011}/text-to-speech-stream
       - INTERRUPT_LISTENING=true
       - SYSTEM_MESSAGE="Hello, how can I help you today?"
     ports:
-      - 5001:5001
+      - ${CORE_PORT_START:-5001}:${CORE_PORT_START:-5001}
     networks:
       - avr
 
@@ -22,7 +22,7 @@ services:
     container_name: avr-asr-deepgram
     restart: always
     environment:
-      - PORT=6010
+      - PORT=${ASR_PORT_START:-6010}
       - DEEPGRAM_API_KEY=$DEEPGRAM_API_KEY
       - SPEECH_RECOGNITION_LANGUAGE=en-US
       - SPEECH_RECOGNITION_MODEL=nova-2-phonecall
@@ -35,7 +35,7 @@ services:
     container_name: avr-tts-deepgram
     restart: always
     environment:
-      - PORT=6011
+      - PORT=${TTS_PORT_START:-6011}
       - DEEPGRAM_API_KEY=$DEEPGRAM_API_KEY
     networks:
       - avr
@@ -46,12 +46,12 @@ services:
     container_name: avr-llm-openai
     restart: always
     environment:
-      - PORT=6002
+      - PORT=${LLM_PORT_START:-6002}
       - OPENAI_API_KEY=$OPENAI_API_KEY
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-3.5-turbo}
       - OPENAI_MAX_TOKENS=${OPENAI_MAX_TOKENS:-100}
       - OPENAI_TEMPERATURE=${OPENAI_TEMPERATURE:-0.0}
-      - AMI_URL=${AMI_URL:-http://avr-ami:6006}
+      - AMI_URL=${AMI_URL:-http://avr-ami:${AMI_PORT:-9000}}
       - SYSTEM_PROMPT="You are a helpful assistant."
     volumes:
       - ./tools:/usr/src/app/tools
@@ -63,9 +63,9 @@ services:
     container_name: avr-asterisk
     restart: always
     ports:
-      - 5038:5038
-      - 5060:5060
-      - 8088:8088
+      - ${ASTERISK_MANAGER_PORT:-5038}:${ASTERISK_MANAGER_PORT:-5038}
+      - ${ASTERISK_SIP_PORT:-5060}:${ASTERISK_SIP_PORT:-5060}
+      - ${ASTERISK_ARI_PORT:-8088}:${ASTERISK_ARI_PORT:-8088}
       - 10000-10050:10000-10050/udp
     volumes:
       - ./asterisk/conf/manager.conf:/etc/asterisk/my_manager.conf
@@ -82,13 +82,13 @@ services:
     container_name: avr-ami
     restart: always
     environment:
-      - PORT=6006
+      - PORT=${AMI_PORT:-9000}
       - AMI_HOST=${AMI_HOST:-avr-asterisk}
-      - AMI_PORT=${AMI_PORT:-5038}
+      - AMI_PORT=${ASTERISK_MANAGER_PORT:-5038}
       - AMI_USERNAME=${AMI_USERNAME:-avr}
       - AMI_PASSWORD=${AMI_PASSWORD:-avr}
     ports:
-      - 6006:6006
+      - ${AMI_PORT:-9000}:${AMI_PORT:-9000}
     networks:
       - avr
 
