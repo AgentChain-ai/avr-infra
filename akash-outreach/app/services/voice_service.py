@@ -90,25 +90,21 @@ class VoiceService:
         Uses direct AMI connection to place calls to SIP endpoints
         """
         try:
-            print(f"🔍 VOICE SERVICE DEBUG: Starting initiate_call for {call_request.phone_number}")
-            logger.info(f"🔍 VOICE SERVICE DEBUG: Starting initiate_call for {call_request.phone_number}")
+            logger.info(f"Starting initiate_call for {call_request.phone_number}")
             
             # Prepare personalized prompt for the call
             personalized_prompt = await self._prepare_personalized_prompt(call_request)
             
             # Generate unique call ID
             call_id = f"call_{int(datetime.utcnow().timestamp())}"
-            print(f"🔍 VOICE SERVICE DEBUG: Generated call_id {call_id}")
             
             # For SIP extensions, call directly through Asterisk
             if call_request.phone_number.isdigit() and len(call_request.phone_number) <= 4:
                 # This is a SIP extension (like 1000)
-                print(f"🔍 VOICE SERVICE DEBUG: Calling SIP extension {call_request.phone_number}")
                 success = await self._initiate_sip_call(call_request, call_id, personalized_prompt)
-                print(f"🔍 VOICE SERVICE DEBUG: SIP call result: {success}")
             else:
                 # This would be for external numbers (needs Twilio integration)
-                print(f"🔍 VOICE SERVICE DEBUG: External number {call_request.phone_number} not supported")
+                logger.warning(f"External number {call_request.phone_number} not supported")
                 return {
                     "success": False,
                     "error": "External calls require Twilio integration",
@@ -172,11 +168,7 @@ class VoiceService:
                 f"channel originate PJSIP/{call_request.phone_number} extension 5001@demo"
             ]
             
-            # Debug logging
-            print(f"🔍 VOICE DEBUG: Executing command: {' '.join(asterisk_cmd)}")
-            print(f"🔍 VOICE DEBUG: Calling phone number: {call_request.phone_number}")
-            logger.info(f"🔍 VOICE DEBUG: Executing command: {' '.join(asterisk_cmd)}")
-            logger.info(f"🔍 VOICE DEBUG: Calling phone number: {call_request.phone_number}")
+            logger.info(f"Executing Asterisk command for {call_request.phone_number}")
             
             # Execute the command
             process = await asyncio.create_subprocess_exec(
@@ -187,16 +179,10 @@ class VoiceService:
             
             stdout, stderr = await process.communicate()
             
-            print(f"🔍 VOICE DEBUG: Command completed. Return code: {process.returncode}")
-            print(f"🔍 VOICE DEBUG: stdout: {stdout.decode()}")
-            print(f"🔍 VOICE DEBUG: stderr: {stderr.decode()}")
-            
             if process.returncode == 0:
-                print(f"🔍 VOICE DEBUG: Asterisk originate command successful for {call_request.phone_number}")
                 logger.info(f"Asterisk originate command successful for {call_request.phone_number}")
                 return True
             else:
-                print(f"🔍 VOICE DEBUG: Asterisk originate failed: {stderr.decode()}")
                 logger.error(f"Asterisk originate failed: {stderr.decode()}")
                 return False
                 
@@ -707,8 +693,7 @@ Always speak in Hindi. Be warm, congratulatory, and helpful. Focus on their spec
         This ensures the dynamic context is used for the specific call
         """
         try:
-            print(f"🔍 DYNAMIC CONTEXT: Updating OpenAI service for {phone_number}")
-            print(f"🔍 CONTEXT PREVIEW: {instructions[:200]}...")
+            logger.info(f"Updating dynamic context for phone number {phone_number}")
             
             # Store the context in our API for reference
             context_data = {
@@ -781,7 +766,7 @@ Always speak in Hindi. Be warm, congratulatory, and helpful. Focus on their spec
             
             # If the pattern didn't match, try a simpler approach
             if new_content == content:
-                print("🔍 COMPOSE UPDATE: Pattern didn't match, trying line-by-line replacement")
+                logger.debug("Pattern didn't match, trying line-by-line replacement")
                 lines = content.split('\n')
                 in_openai_instructions = False
                 new_lines = []
@@ -806,12 +791,10 @@ Always speak in Hindi. Be warm, congratulatory, and helpful. Focus on their spec
             with open(compose_file, 'w') as f:
                 f.write(new_content)
             
-            print(f"✅ COMPOSE UPDATE: Updated docker-compose with personalized instructions")
-            print(f"🔍 PREVIEW: {escaped_instructions[:100]}...")
+            logger.info("Updated docker-compose with personalized instructions")
             return True
             
         except Exception as e:
-            print(f"❌ COMPOSE UPDATE: Error updating compose file: {str(e)}")
             logger.error(f"Error updating compose file: {str(e)}")
             return False
             

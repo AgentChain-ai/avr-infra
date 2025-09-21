@@ -129,9 +129,6 @@ def show_campaign_management(api_client):
             status = None if status_filter == "All" else status_filter.lower()
             campaigns = api_client.get_campaigns(status=status)
         
-        # Debug: Show what we received
-        st.write(f"DEBUG: Received {len(campaigns) if campaigns else 0} campaigns")
-        
         if not campaigns:
             st.info("📝 No campaigns found")
             
@@ -549,9 +546,6 @@ def create_campaign(api_client, name, description):
             "campaign_start_date": schedule["start_date"].isoformat(),
             "campaign_end_date": schedule["end_date"].isoformat()
         }
-        
-        # Debug: Show the time values being sent
-        st.info(f"🔍 Debug - Call times: {campaign_data['call_from_time']} to {campaign_data['call_to_time']}")
         
         with st.spinner("🚀 Creating campaign and generating personalized contexts..."):
             campaign = api_client.create_campaign(campaign_data)

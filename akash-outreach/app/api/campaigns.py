@@ -2,6 +2,7 @@
 Campaign management API endpoints
 """
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -17,6 +18,7 @@ from ..services.context_generation import ContextGenerationService
 from ..services.voice_service import get_voice_service, VoiceService
 
 router = APIRouter(tags=["campaigns"])
+logger = logging.getLogger(__name__)
 
 # Pydantic models for request/response
 class CampaignCreate(BaseModel):
@@ -420,9 +422,7 @@ async def activate_campaign(
             voice_service = init_voice_service({})
         
         # Execute campaign via AVR system
-        print(f"🔍 CAMPAIGN DEBUG: About to execute campaign {campaign.id}")
         execution_result = await voice_service.execute_campaign(campaign_data)
-        print(f"🔍 CAMPAIGN DEBUG: Execution result: {execution_result}")
         
         if execution_result.get("success"):
             # Update campaign status

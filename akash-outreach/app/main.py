@@ -2,6 +2,7 @@
 FastAPI backend for Akash Institute Outreach System
 Main application entry point
 """
+import logging
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -14,6 +15,8 @@ from .models import Student, FieldConfiguration, CallLog, ContextInfo
 
 # Import API routers
 from .api import auth, students, fields, calls, context, analytics, voice, campaigns, webhooks
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.app_name,
@@ -36,16 +39,16 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Application startup"""
-    print("🚀 Starting Akash Institute Outreach System...")
+    logger.info("Starting Akash Institute Outreach System...")
     
     try:
         # Validate environment
         validate_environment()
-        print("✅ Environment validation passed")
+        logger.info("Environment validation passed")
         
         # Ensure database tables exist
         create_tables()
-        print("✅ Database tables verified")
+        logger.info("Database tables verified")
         
         # Initialize voice service
         from .services.voice_service import init_voice_service
@@ -56,27 +59,26 @@ async def startup_event():
             "default_script_id": "scholarship_notification"
         }
         init_voice_service(voice_config)
-        print("✅ Voice service initialized")
+        logger.info("Voice service initialized")
         
-        print(f"✅ API server starting on http://{settings.host}:{settings.port}")
-        print(f"📚 API Documentation: http://{settings.host}:{settings.port}/docs")
+        logger.info(f"API server starting on http://{settings.host}:{settings.port}")
         
     except Exception as e:
-        print(f"❌ Startup error: {e}")
+        logger.error(f"Startup error: {e}")
         raise
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Application shutdown"""
-    print("🛑 Shutting down Akash Institute Outreach System...")
+    logger.info("Shutting down Akash Institute Outreach System...")
 
 
 # Exception handlers
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler"""
-    print(f"❌ Unhandled exception: {exc}")
+    logger.error(f"Unhandled exception: {exc}")
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error"}

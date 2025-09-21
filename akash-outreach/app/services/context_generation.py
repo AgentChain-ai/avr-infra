@@ -2,6 +2,7 @@
 Context Generation Service for AI-powered personalized student outreach
 """
 
+import logging
 import openai
 import json
 from typing import List, Dict, Any
@@ -10,6 +11,8 @@ from sqlalchemy.orm import Session
 from ..models.student import Student
 from ..models.context_info import ContextInfo
 from ..config import settings
+
+logger = logging.getLogger(__name__)
 
 class ContextGenerationService:
     """Service for generating personalized contexts using AI"""
@@ -26,30 +29,18 @@ class ContextGenerationService:
     ) -> Dict[str, Any]:
         """Generate personalized contexts for all students in a campaign"""
         
-        print(f"🔍 DEBUG: Starting context generation for campaign {campaign_id}")
-        print(f"🔍 DEBUG: Found {len(context_notes)} context notes")
-        print(f"🔍 DEBUG: Found {len(students)} students")
-        
-        # Debug: Show context notes
-        for i, note in enumerate(context_notes):
-            print(f"🔍 DEBUG: Context Note {i+1}: {note.topic} - {note.information[:100]}...")
-        
-        # Debug: Show students
-        for i, student in enumerate(students):
-            print(f"🔍 DEBUG: Student {i+1}: ID={student.id}, Data={student.student_data}")
+        logger.info(f"Starting context generation for campaign {campaign_id}")
+        logger.info(f"Found {len(context_notes)} context notes and {len(students)} students")
         
         # Prepare context information
         context_info = self._prepare_context_info(context_notes)
-        print(f"🔍 DEBUG: Prepared context info length: {len(context_info)} chars")
         
         # Generate contexts for each student
         personalized_contexts = {}
         
         for student in students:
-            print(f"🔍 DEBUG: Generating context for student {student.id}")
             try:
                 context_text = await self._generate_student_context(student, context_info)
-                print(f"🔍 DEBUG: Generated context for student {student.id}: {len(context_text) if context_text else 0} chars")
                 
                 # Create structured context data
                 student_data = student.student_data or {}
@@ -60,10 +51,9 @@ class ContextGenerationService:
                 }
                 
                 personalized_contexts[str(student.id)] = context_data
-                print(f"🔍 DEBUG: Stored structured context for student {student.id}")
                 
             except Exception as e:
-                print(f"❌ DEBUG: Failed to generate AI context for student {student.id}: {str(e)}")
+                logger.error(f"Failed to generate AI context for student {student.id}: {str(e)}")
                 # If individual context generation fails, use fallback
                 fallback_context = self._create_fallback_context(student, context_notes)
                 student_data = student.student_data or {}
@@ -75,10 +65,8 @@ class ContextGenerationService:
                 }
                 
                 personalized_contexts[str(student.id)] = context_data
-                print(f"🔍 DEBUG: Using fallback context for student {student.id}")
         
-        print(f"🔍 DEBUG: Total generated contexts: {len(personalized_contexts)}")
-        print(f"🔍 DEBUG: Final result keys: {list(personalized_contexts.keys())}")
+        logger.info(f"Generated contexts for {len(personalized_contexts)} students")
         
         return personalized_contexts
     
@@ -113,9 +101,7 @@ class ContextGenerationService:
         )
         
         try:
-            print(f"🔍 DEBUG: Making OpenAI API call for student {student.id}")
-            print(f"🔍 DEBUG: Prompt length: {len(prompt)} chars")
-            print(f"🔍 DEBUG: Prompt preview: {prompt[:200]}...")
+            logger.debug(f"Making OpenAI API call for student {student.id}")
             
             response = await self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
@@ -139,14 +125,12 @@ Create detailed, actionable context that enables meaningful, personalized conver
             )
             
             result = response.choices[0].message.content.strip()
-            print(f"✅ DEBUG: OpenAI API success for student {student.id}")
-            print(f"🔍 DEBUG: Response length: {len(result)} chars")
-            print(f"🔍 DEBUG: Response preview: {result[:200]}...")
+            logger.debug(f"OpenAI API success for student {student.id}")
             
             return result
             
         except Exception as e:
-            print(f"❌ DEBUG: OpenAI API error for student {student.id}: {str(e)}")
+            logger.error(f"OpenAI API error for student {student.id}: {str(e)}")
             raise Exception(f"OpenAI API error: {str(e)}")
     
     def _create_personalization_prompt(
