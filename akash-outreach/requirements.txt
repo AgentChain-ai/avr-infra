@@ -1,0 +1,45 @@
+# FastAPI and Web Framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart
+
+# Database
+sqlalchemy>=2.0.0
+
+# Streamlit Dashboard
+streamlit
+plotly
+altair
+
+# Data Processing
+pandas
+openpyxl
+
+# AI Services
+openai>=1.0.0
+
+# Configuration
+pydantic-settings
+python-dotenv
+
+# Authentication & Security
+python-jose[cryptography]
+passlib[bcrypt]
+PyJWT
+
+# HTTP Client
+httpx
+requests
+
+# Utilities
+pydantic>=2.0.0
+pydantic-settings
+python-dateutil
+
+# Testing
+pytest
+pytest-asyncio
+
+# Development
+black
+isort

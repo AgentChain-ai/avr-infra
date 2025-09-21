@@ -1,0 +1,8 @@
+# Minimal requirements for Python 3.12 compatibility
+fastapi
+uvicorn
+sqlalchemy
+python-dotenv
+pydantic
+pydantic-settings
+httpx
