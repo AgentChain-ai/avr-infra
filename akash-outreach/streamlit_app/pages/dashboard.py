@@ -104,7 +104,7 @@ def show_dashboard():
         
     except Exception as e:
         st.error(f"❌ Error loading dashboard: {str(e)}")
-        st.info("💡 Make sure the FastAPI backend is running on http://localhost:8000")
+        st.info("💡 Make sure the FastAPI backend is running on http://localhost:8000 (local) or http://akash-outreach-api:8000 (Docker)")
 
 def render_main_metrics(metrics: Dict[str, Any]):
     """Render main KPI metrics"""

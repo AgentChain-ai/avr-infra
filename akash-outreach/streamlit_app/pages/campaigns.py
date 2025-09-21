@@ -21,7 +21,60 @@ def show_campaigns():
         show_campaign_details(api_client, st.session_state.show_campaign_details)
         return
     
-    st.title("📢 Campaign Management")
+    # Call the main campaigns page function
+    campaigns_page()
+
+
+def activate_campaign_action(api_client, campaign_id):
+    """Activate a campaign and start calling"""
+    try:
+        # Get campaign details first
+        campaign_details = api_client.get_campaign(campaign_id)
+        
+        # Check if current time is within call window
+        from datetime import datetime, time
+        current_time = datetime.now().time()
+        
+        if campaign_details:
+            call_from_str = campaign_details.get('call_from_time', '09:00')
+            call_to_str = campaign_details.get('call_to_time', '23:59')
+            
+            call_from = datetime.strptime(call_from_str, '%H:%M').time()
+            call_to = datetime.strptime(call_to_str, '%H:%M').time()
+            
+            if current_time < call_from or current_time > call_to:
+                st.warning(f"⚠️ Current time ({current_time.strftime('%H:%M')}) is outside the campaign call window ({call_from_str} - {call_to_str}). Calls may not be initiated immediately.")
+        
+        with st.spinner("� Activating campaign..."):
+            result = api_client.activate_campaign(campaign_id)
+        
+        # The API returns a message directly on success, not a success field
+        if result and result.get('message'):
+            st.session_state.campaign_success_message = f"✅ {result.get('message')}"
+            st.rerun()
+        else:
+            st.error("❌ Failed to activate campaign: No response from server")
+    
+    except Exception as e:
+        st.error(f"❌ Error activating campaign: {str(e)}")
+
+
+def campaigns_page():
+    """Campaign Management"""
+    
+    st.title("📞 Campaign Management")
+    
+    # Check authentication
+    if not st.session_state.get("authenticated"):
+        st.warning("⚠️ Please login first")
+        return
+    
+    api_client = st.session_state.api_client
+    
+    # Check if we should show campaign details
+    if st.session_state.get("show_campaign_details"):
+        show_campaign_details(api_client, st.session_state.show_campaign_details)
+        return
     
     # Handle session state messages
     if "campaign_success_message" in st.session_state:
@@ -125,13 +178,13 @@ def show_campaign_management(api_client):
                         with col_btn1:
                             if campaign.get('status') == 'draft':
                                 if st.button("🚀 Activate", key=f"activate_{campaign.get('id')}"):
-                                    st.info("Campaign activation - coming soon!")
+                                    activate_campaign_action(api_client, campaign.get('id'))
                             elif campaign.get('status') == 'active':
                                 if st.button("⏸️ Pause", key=f"pause_{campaign.get('id')}"):
-                                    st.info("Campaign pause - coming soon!")
+                                    pause_campaign_action(api_client, campaign.get('id'))
                             elif campaign.get('status') == 'paused':
                                 if st.button("▶️ Resume", key=f"resume_{campaign.get('id')}"):
-                                    st.info("Campaign resume - coming soon!")
+                                    resume_campaign_action(api_client, campaign.get('id'))
                         
                         with col_btn2:
                             if st.button("📊 Details", key=f"details_{campaign.get('id')}"):
@@ -321,8 +374,9 @@ def show_student_selection_step(api_client):
             col1, col2, col3 = st.columns([1, 3, 2])
             
             with col1:
+                student_name = student.get('student_name', f"Student {student['id']}")
                 is_selected = st.checkbox(
-                    f"Select {student.get('student_name', f'Student {student['id']}')}",
+                    f"Select {student_name}",
                     key=f"student_{student['id']}_unique",
                     label_visibility="collapsed"
                 )
@@ -393,8 +447,13 @@ def show_schedule_step(api_client):
         
         to_time = st.time_input(
             "Call To",
-            value=datetime.strptime("17:00", "%H:%M").time()
+            value=datetime.strptime("23:59", "%H:%M").time()
         )
+    
+    # Validate time window
+    if from_time >= to_time:
+        st.error("❌ Call start time must be before call end time")
+        return
     
     # Store schedule in session state
     st.session_state.campaign_schedule = {
@@ -490,6 +549,9 @@ def create_campaign(api_client, name, description):
             "campaign_start_date": schedule["start_date"].isoformat(),
             "campaign_end_date": schedule["end_date"].isoformat()
         }
+        
+        # Debug: Show the time values being sent
+        st.info(f"🔍 Debug - Call times: {campaign_data['call_from_time']} to {campaign_data['call_to_time']}")
         
         with st.spinner("🚀 Creating campaign and generating personalized contexts..."):
             campaign = api_client.create_campaign(campaign_data)
@@ -639,11 +701,77 @@ def show_campaign_details(api_client, campaign_id):
             st.warning("⚠️ No personalized contexts found for this campaign.")
             
             if st.button("🤖 Generate Contexts Now"):
-                # TODO: Add API call to generate contexts for existing campaign
-                st.info("🔄 Context generation feature coming soon!")
+                generate_contexts_action(api_client, campaign_id)
     
     except Exception as e:
         st.error(f"❌ Error loading campaign details: {str(e)}")
+
+
+def activate_campaign_action(api_client, campaign_id):
+    """Activate a campaign and start calling"""
+    try:
+        with st.spinner("🚀 Activating campaign..."):
+            result = api_client.activate_campaign(campaign_id)
+        
+        # The API returns a message directly on success, not a success field
+        if result and result.get('message'):
+            st.session_state.campaign_success_message = f"✅ {result.get('message')}"
+            st.rerun()
+        else:
+            st.error(f"❌ Failed to activate campaign: No response from server")
+    
+    except Exception as e:
+        st.error(f"❌ Error activating campaign: {str(e)}")
+
+
+def pause_campaign_action(api_client, campaign_id):
+    """Pause an active campaign"""
+    try:
+        with st.spinner("⏸️ Pausing campaign..."):
+            # Using generic update endpoint since pause might not be implemented yet
+            result = api_client._make_request("POST", f"/campaigns/{campaign_id}/pause")
+        
+        if result.get('success'):
+            st.session_state.campaign_success_message = "⏸️ Campaign paused successfully!"
+            st.rerun()
+        else:
+            st.error(f"❌ Failed to pause campaign: {result.get('message', 'Unknown error')}")
+    
+    except Exception as e:
+        st.error(f"❌ Error pausing campaign: {str(e)}")
+
+
+def resume_campaign_action(api_client, campaign_id):
+    """Resume a paused campaign"""
+    try:
+        with st.spinner("▶️ Resuming campaign..."):
+            # Using generic update endpoint since resume might not be implemented yet
+            result = api_client._make_request("POST", f"/campaigns/{campaign_id}/resume")
+        
+        if result.get('success'):
+            st.session_state.campaign_success_message = "▶️ Campaign resumed successfully!"
+            st.rerun()
+        else:
+            st.error(f"❌ Failed to resume campaign: {result.get('message', 'Unknown error')}")
+    
+    except Exception as e:
+        st.error(f"❌ Error resuming campaign: {str(e)}")
+
+
+def generate_contexts_action(api_client, campaign_id):
+    """Generate personalized contexts for campaign"""
+    try:
+        with st.spinner("🤖 Generating personalized contexts..."):
+            result = api_client.regenerate_contexts(campaign_id)
+        
+        if result.get('success'):
+            st.session_state.campaign_success_message = "🤖 Personalized contexts generated successfully!"
+            st.rerun()
+        else:
+            st.error(f"❌ Failed to generate contexts: {result.get('message', 'Unknown error')}")
+    
+    except Exception as e:
+        st.error(f"❌ Error generating contexts: {str(e)}")
 
 
 if __name__ == "__main__":

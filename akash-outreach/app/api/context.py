@@ -2,11 +2,12 @@
 Context API endpoints
 Knowledge base and context information management
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import logging
 
 from ..database import get_db
 from ..models import ContextInfo, ContextCategory
@@ -19,6 +20,9 @@ from ..models.context_info import (
     search_context_info
 )
 from .auth import get_current_user, UserInfo
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 # Pydantic models
 class ContextNoteCreate(BaseModel):
@@ -753,3 +757,235 @@ async def export_knowledge_base(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Unsupported format. Use 'json' or 'csv'"
         )
+
+
+# Call Context Storage Endpoints
+from ..services.context_store import context_store
+
+class CallContextRequest(BaseModel):
+    phone_number: str
+    context_data: Dict[str, Any]
+
+class CallContextResponse(BaseModel):
+    context_id: str
+    phone_number: str
+    message: str
+
+@router.post("/call-context/store", response_model=CallContextResponse)
+async def store_call_context(request: CallContextRequest):
+    """
+    Store personalized context for a call
+    """
+    try:
+        context_id = context_store.store_context(
+            phone_number=request.phone_number,
+            context_data=request.context_data
+        )
+        
+        return CallContextResponse(
+            context_id=context_id,
+            phone_number=request.phone_number,
+            message="Context stored successfully"
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store context: {str(e)}")
+
+@router.get("/call-context/{phone_number}")
+async def get_call_context(phone_number: str):
+    """
+    Get personalized context for a phone number - used by LLM service
+    """
+    try:
+        context_data = context_store.get_context_by_phone(phone_number)
+        
+        if not context_data:
+            return {
+                "phone_number": phone_number,
+                "context_data": None,
+                "found": False,
+                "message": "No context found for this phone number"
+            }
+        
+        return {
+            "phone_number": phone_number,
+            "context_data": context_data,
+            "found": True,
+            "message": "Context found"
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get context: {str(e)}")
+
+@router.get("/call-context")
+async def get_call_context_by_param(phone_number: str = None, call_id: str = None):
+    """
+    Get personalized context for a call - flexible endpoint for LLM service
+    This endpoint can be called with either phone_number or call_id
+    """
+    try:
+        if phone_number:
+            # Look up by phone number first
+            context_data = context_store.get_context_by_phone(phone_number)
+        elif call_id:
+            # Look up by call ID 
+            context_data = context_store.get_context_by_id(call_id)
+        else:
+            return {
+                "error": "Either phone_number or call_id parameter is required",
+                "found": False
+            }
+        
+        if not context_data:
+            return {
+                "phone_number": phone_number,
+                "call_id": call_id,
+                "context_data": None,
+                "found": False,
+                "message": "No context found"
+            }
+        
+        # Return the personalized context that can be used by the LLM
+        return {
+            "phone_number": phone_number,
+            "call_id": call_id,
+            "context_data": context_data,
+            "found": True,
+            "personalized_prompt": context_data.get("personalized_context", ""),
+            "student_info": {
+                "student_id": context_data.get("student_id"),
+                "student_name": context_data.get("student_name"),
+                "call_id": context_data.get("call_id")
+            },
+            "message": "Context found successfully"
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get context: {str(e)}")
+
+@router.delete("/call-context/{phone_number}")
+async def cleanup_call_context(phone_number: str):
+    """
+    Clean up context for a phone number after call completion
+    """
+    try:
+        context_store.cleanup_context(phone_number)
+        return {
+            "phone_number": phone_number,
+            "message": "Context cleaned up successfully"
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup context: {str(e)}")
+
+@router.post("/call-context/update")
+async def update_call_context_for_phone(request: dict):
+    """
+    Update/set personalized context for a phone number - for dynamic context passing
+    This endpoint allows the voice service to send context directly before making calls
+    """
+    try:
+        phone_number = request.get("phone_number")
+        instructions = request.get("instructions")
+        
+        if not phone_number or not instructions:
+            raise HTTPException(status_code=400, detail="phone_number and instructions are required")
+        
+        # Store the dynamic context
+        context_data = {
+            "phone_number": phone_number,
+            "personalized_instructions": instructions,
+            "dynamic_context": True,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        context_id = context_store.store_context(
+            phone_number=phone_number,
+            context_data=context_data
+        )
+        
+        return {
+            "success": True,
+            "phone_number": phone_number,
+            "context_id": context_id,
+            "message": "Dynamic context updated successfully"
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update context: {str(e)}")
+
+@router.get("/openai-instructions/{phone_number}")
+async def get_openai_instructions_for_call(phone_number: str):
+    """
+    Get personalized OpenAI instructions for a specific phone number
+    This endpoint is called by the OpenAI Realtime service to get dynamic context
+    """
+    try:
+        context_data = context_store.get_context_by_phone(phone_number)
+        
+        if not context_data:
+            return {
+                "phone_number": phone_number,
+                "instructions": "You are calling from Akash Institute. Always speak in Hindi. Be warm and professional.",
+                "found": False,
+                "message": "No personalized context found, using default instructions"
+            }
+        
+        # Return the personalized instructions
+        instructions = context_data.get("personalized_instructions", 
+                                       "You are calling from Akash Institute. Always speak in Hindi. Be warm and professional.")
+        
+        return {
+            "phone_number": phone_number,
+            "instructions": instructions,
+            "found": True,
+            "message": "Personalized instructions retrieved successfully"
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get instructions: {str(e)}")
+
+
+@router.get("/openai-system-instructions")
+async def get_openai_system_instructions(
+    request: Request
+):
+    """
+    Get system instructions for OpenAI AVR service in the format it expects.
+    This endpoint is called by the AVR OpenAI service when OPENAI_URL_INSTRUCTIONS is set.
+    
+    Returns instructions in the format: {"system": "instructions_text"}
+    The AVR service includes X-AVR-UUID header with session UUID.
+    This endpoint is public (no auth required) as it's called by the AVR service.
+    """
+    try:
+        # Get session UUID from header (sent by AVR service)
+        session_uuid = request.headers.get("X-AVR-UUID")
+        logger.info(f"AVR OpenAI service requesting instructions for session: {session_uuid}")
+        
+        # For now, we'll use a default phone number until we can map session to phone
+        # In a real implementation, you'd need to track session->phone mapping
+        default_phone = "1000"  # Our test phone number
+        
+        # Try to get personalized context from our store
+        context_data = context_store.get_context_by_phone(default_phone)
+        
+        if context_data and context_data.get("personalized_instructions"):
+            instructions = context_data["personalized_instructions"]
+            logger.info(f"Returning personalized instructions for phone {default_phone}")
+        else:
+            # Fallback to default instructions
+            instructions = "You are calling from Akash Institute. Always speak in Hindi. Be warm and professional. आप अकाश इंस्टिट्यूट से कॉल कर रहे हैं। हमेशा हिंदी में बोलें। गर्मजोशी से और पेशेवर तरीके से बात करें।"
+            logger.info("Using default instructions - no personalized context found")
+        
+        # Return in the format expected by AVR service
+        return {
+            "system": instructions
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting OpenAI system instructions: {str(e)}")
+        # Return default instructions on error
+        return {
+            "system": "You are calling from Akash Institute. Always speak in Hindi. Be warm and professional."
+        }

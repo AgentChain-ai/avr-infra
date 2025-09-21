@@ -259,9 +259,15 @@ def render_integrations(api_client):
         },
         {
             "name": "Twilio Voice",
-            "description": "Voice calling infrastructure",
+            "description": "Voice calling infrastructure for external numbers (currently using direct SIP for local testing)",
             "status": "configured",
             "icon": "📞"
+        },
+        {
+            "name": "AVR Voice System", 
+            "description": "Direct SIP calling through Asterisk - Successfully tested!",
+            "status": "active",
+            "icon": "🎙️"
         },
         {
             "name": "Google Sheets",

@@ -13,7 +13,7 @@ from .database import get_db, create_tables
 from .models import Student, FieldConfiguration, CallLog, ContextInfo
 
 # Import API routers
-from .api import auth, students, fields, calls, context, analytics, voice, campaigns
+from .api import auth, students, fields, calls, context, analytics, voice, campaigns, webhooks
 
 app = FastAPI(
     title=settings.app_name,
@@ -129,6 +129,55 @@ async def database_status(db: Session = Depends(get_db)):
         }
 
 
+@app.get("/api/v1/context/openai-system-instructions")
+async def get_openai_system_instructions_public(request: Request):
+    """
+    Public endpoint for OpenAI AVR service to get system instructions.
+    This endpoint doesn't require authentication as it's called by the AVR service.
+    
+    Returns instructions in the format: {"system": "instructions_text"}
+    The AVR service includes X-AVR-UUID header with session UUID.
+    """
+    try:
+        from .services.context_store import context_store
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        # Get session UUID from header (sent by AVR service)
+        session_uuid = request.headers.get("X-AVR-UUID")
+        logger.info(f"AVR OpenAI service requesting instructions for session: {session_uuid}")
+        
+        # For now, we'll use a default phone number until we can map session to phone
+        # In a real implementation, you'd need to track session->phone mapping
+        default_phone = "1000"  # Our test phone number
+        
+        # Try to get personalized context from our store
+        context_data = context_store.get_context_by_phone(default_phone)
+        
+        if context_data and context_data.get("personalized_instructions"):
+            instructions = context_data["personalized_instructions"]
+            logger.info(f"Returning personalized instructions for phone {default_phone}")
+        else:
+            # Fallback to default instructions
+            instructions = "You are calling from Akash Institute. Always speak in Hindi. Be warm and professional. आप अकाश इंस्टिट्यूट से कॉल कर रहे हैं। हमेशा हिंदी में बोलें। गर्मजोशी से और पेशेवर तरीके से बात करें।"
+            logger.info("Using default instructions - no personalized context found")
+        
+        # Return in the format expected by AVR service
+        return {
+            "system": instructions
+        }
+        
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting OpenAI system instructions: {str(e)}")
+        # Return default instructions on error
+        return {
+            "system": "You are calling from Akash Institute. Always speak in Hindi. Be warm and professional."
+        }
+
+
 # AVR integration status
 @app.get("/status/avr")
 async def avr_status():
@@ -168,6 +217,7 @@ app.include_router(context.router, prefix="/api/v1/context", tags=["Context"])
 app.include_router(campaigns.router, prefix="/api/v1/campaigns", tags=["Campaigns"])
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["Analytics"])
 app.include_router(voice.router, prefix="/api/v1/voice", tags=["Voice Integration"])
+app.include_router(webhooks.router, tags=["Webhooks"])  # No prefix for webhooks
 
 
 def run_server():

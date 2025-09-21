@@ -4,12 +4,16 @@ Authentication Manager for Streamlit application
 
 import requests
 import streamlit as st
+import os
 from typing import Tuple, Optional, Dict, Any
 
 class AuthManager:
     """Handle authentication with FastAPI backend"""
     
-    def __init__(self, base_url: str = "http://localhost:8000/api/v1"):
+    def __init__(self, base_url: str = None):
+        if base_url is None:
+            # Use environment variable or default to localhost for local development
+            base_url = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
         self.base_url = base_url
     
     def login(self, username: str, password: str) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:

@@ -14,6 +14,7 @@ from ..models.student import Student
 from ..models.context_info import ContextInfo
 from .auth import get_current_user, UserInfo
 from ..services.context_generation import ContextGenerationService
+from ..services.voice_service import get_voice_service, VoiceService
 
 router = APIRouter(tags=["campaigns"])
 
@@ -182,37 +183,24 @@ async def create_campaign(
     db.add(campaign)
     db.commit()
     db.refresh(campaign)
-    
-    print(f"🔍 DEBUG: Campaign {campaign.id} created successfully")
 
     # Generate personalized contexts for all students
     try:
-        print(f"🔍 DEBUG: Starting context generation for campaign {campaign.id}")
         context_service = ContextGenerationService(db)
         personalized_contexts = await context_service.generate_campaign_contexts(
             campaign.id, existing_contexts, existing_students
         )
         
-        print(f"🔍 DEBUG: Context generation completed. Result type: {type(personalized_contexts)}")
-        print(f"🔍 DEBUG: Number of contexts generated: {len(personalized_contexts) if personalized_contexts else 0}")
-        
-        if personalized_contexts:
-            print(f"🔍 DEBUG: Context keys: {list(personalized_contexts.keys())}")
-            
         # Update campaign with generated contexts
-        print(f"🔍 DEBUG: Updating campaign {campaign.id} with contexts...")
         campaign.personalized_contexts = personalized_contexts
         db.commit()
         db.refresh(campaign)
         
-        print(f"🔍 DEBUG: Campaign updated. Final personalized_contexts value: {campaign.personalized_contexts}")
-        
     except Exception as e:
         # If context generation fails, still create the campaign but log the error
-        error_msg = f"Warning: Failed to generate contexts for campaign {campaign.id}: {str(e)}"
-        print(error_msg)
+        logger.error(f"Failed to generate contexts for campaign {campaign.id}: {str(e)}")
         import traceback
-        traceback.print_exc()
+        logger.error(traceback.format_exc())
     
     return CampaignResponse(**campaign.to_dict())
 
@@ -384,7 +372,7 @@ async def activate_campaign(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    """Activate campaign to start calling"""
+    """Activate campaign and start calling via AVR system"""
     
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     
@@ -400,11 +388,66 @@ async def activate_campaign(
             detail="Only draft campaigns can be activated"
         )
     
-    campaign.status = "active"
-    campaign.updated_at = datetime.utcnow()
-    db.commit()
-    
-    return {"message": "Campaign activated successfully"}
+    try:
+        # Get student data for the campaign
+        students = db.query(Student).filter(Student.id.in_(campaign.student_ids)).all()
+        students_data = {}
+        for student in students:
+            students_data[str(student.id)] = {
+                "phone_number": student.phone_number,
+                "student_name": student.student_data.get("student_name", ""),
+                "parent_name": student.student_data.get("parent_name"),
+                "scholarship_amount": student.student_data.get("scholarship_amount"),
+                "course": student.student_data.get("course"),
+                **student.student_data  # Include all student data
+            }
+        
+        # Prepare campaign data for voice service
+        campaign_data = {
+            "id": campaign.id,
+            "name": campaign.name,
+            "student_ids": campaign.student_ids,
+            "students": students_data,
+            "personalized_contexts": campaign.personalized_contexts or {}
+        }
+        
+        # Initialize voice service if not already done
+        try:
+            voice_service = get_voice_service()
+        except RuntimeError:
+            # Initialize voice service with default config
+            from ..services.voice_service import init_voice_service
+            voice_service = init_voice_service({})
+        
+        # Execute campaign via AVR system
+        print(f"🔍 CAMPAIGN DEBUG: About to execute campaign {campaign.id}")
+        execution_result = await voice_service.execute_campaign(campaign_data)
+        print(f"🔍 CAMPAIGN DEBUG: Execution result: {execution_result}")
+        
+        if execution_result.get("success"):
+            # Update campaign status
+            campaign.status = "active"
+            campaign.updated_at = datetime.utcnow()
+            db.commit()
+            
+            return {
+                "message": "Campaign activated and calls initiated successfully",
+                "campaign_id": campaign.id,
+                "execution_result": execution_result
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to start campaign calls: {execution_result.get('error', 'Unknown error')}"
+            )
+            
+    except Exception as e:
+        # Rollback campaign status if activation failed
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Campaign activation failed: {str(e)}"
+        )
 
 @router.post("/{campaign_id}/pause")
 async def pause_campaign(
